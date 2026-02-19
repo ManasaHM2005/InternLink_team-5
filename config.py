@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database
-    DATABASE_URL: str = "sqlite:///./internlink.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL")
 
     # JWT
     JWT_SECRET_KEY: str = "internlink-super-secret-key-change-in-production"
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # File Uploads
     UPLOAD_DIR: str = os.path.join(os.path.dirname(__file__), "uploads")
     MAX_RESUME_SIZE_MB: int = 10
-    ALLOWED_RESUME_EXTENSIONS: list = [".pdf", ".doc", ".docx"]
+    ALLOWED_RESUME_EXTENSIONS: list = [".pdf", ".doc", ".docx", ".txt"]
 
     class Config:
         env_file = ".env"
