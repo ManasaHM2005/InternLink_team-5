@@ -17,6 +17,17 @@ import os
 
 router = APIRouter(prefix="/recruiter", tags=["Recruiter"])
 
+@router.get("/debug/system-state")
+def debug_system_state(db: Session = Depends(get_db)):
+    return {
+        "users_count": db.query(User).count(),
+        "jobs_count": db.query(Job).count(),
+        "applications_count": db.query(Application).count(),
+        "recruiter_profiles_count": db.query(RecruiterProfile).count(),
+        "all_jobs": [{"id": j.id, "title": j.title, "recruiter_id": j.recruiter_id} for j in db.query(Job).all()],
+        "all_apps": [{"id": a.id, "job_id": a.job_id, "user_id": a.user_id} for a in db.query(Application).all()]
+    }
+
 
 # --- Recruiter Profile ---
 @router.get("/profile", response_model=RecruiterProfileResponse)
@@ -167,6 +178,14 @@ def get_applicants(
     for app in applications:
         user = db.query(User).filter(User.id == app.user_id).first()
         profile = db.query(UserProfile).filter(UserProfile.user_id == app.user_id).first()
+        resume = db.query(Resume).filter(Resume.id == app.resume_id).first() if app.resume_id else None
+        
+        # Combine skills from profile and resume
+        skills = set()
+        if profile and profile.skills:
+            skills.update(profile.skills)
+        if resume and resume.parsed_skills:
+            skills.update(resume.parsed_skills)
 
         result.append(ApplicationResponse(
             id=app.id,
@@ -181,6 +200,66 @@ def get_applicants(
             job_title=job.title,
             applicant_name=profile.full_name if profile else None,
             applicant_email=user.email if user else None,
+            skills=list(skills),
+            education=profile.education if profile else [],
+            experience=profile.experience if profile else []
+        ))
+
+    return result
+
+
+@router.get("/applicants", response_model=List[ApplicationResponse])
+def get_all_applicants(
+    current_user: User = Depends(require_role("recruiter")),
+    db: Session = Depends(get_db)
+):
+    """View all applicants for all jobs posted by the recruiter."""
+    recruiter = db.query(RecruiterProfile).filter(
+        RecruiterProfile.user_id == current_user.id
+    ).first()
+    if not recruiter:
+        return []
+
+    # Get all jobs by this recruiter
+    job_ids = [j.id for j in db.query(Job.id).filter(Job.recruiter_id == recruiter.id).all()]
+    
+    if not job_ids:
+        return []
+
+    applications = db.query(Application).filter(
+        Application.job_id.in_(job_ids)
+    ).order_by(Application.applied_at.desc()).all()
+
+    result = []
+    for app in applications:
+        user = db.query(User).filter(User.id == app.user_id).first()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == app.user_id).first()
+        resume = db.query(Resume).filter(Resume.id == app.resume_id).first() if app.resume_id else None
+        job = db.query(Job).filter(Job.id == app.job_id).first()
+
+        # Combine skills from profile and resume
+        skills = set()
+        if profile and profile.skills:
+            skills.update(profile.skills)
+        if resume and resume.parsed_skills:
+            skills.update(resume.parsed_skills)
+
+        result.append(ApplicationResponse(
+            id=app.id,
+            user_id=app.user_id,
+            job_id=app.job_id,
+            resume_id=app.resume_id,
+            cover_letter=app.cover_letter,
+            status=app.status,
+            matching_score=app.matching_score,
+            applied_at=app.applied_at,
+            updated_at=app.updated_at,
+            job_title=job.title if job else "Unknown",
+            applicant_name=profile.full_name if profile else None,
+            applicant_email=user.email if user else None,
+            skills=list(skills),
+            education=profile.education if profile else [],
+            experience=profile.experience if profile else []
         ))
 
     return result

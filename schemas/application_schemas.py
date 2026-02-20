@@ -28,6 +28,9 @@ class ApplicationResponse(BaseModel):
     company_name: Optional[str] = None
     applicant_name: Optional[str] = None
     applicant_email: Optional[str] = None
+    skills: Optional[List[str]] = []
+    education: Optional[List[dict]] = []
+    experience: Optional[List[dict]] = []
 
     class Config:
         from_attributes = True
