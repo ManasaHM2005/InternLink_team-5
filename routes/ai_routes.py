@@ -103,3 +103,27 @@ def interview_preparation(job_id: int, current_user: User = Depends(get_current_
         focus_areas=result["focus_areas"],
         company_research_points=result["company_research_points"],
     )
+@router.post("/interview-chat/{job_id}")
+def interview_chat(job_id: int, message_data: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Handle chat interaction for interview prep."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    message = message_data.get("message", "").lower()
+    
+    # Simple logic for practice
+    if "practice" in message or "start" in message:
+        return {"response": "Great! Let's start. Here is your first question: **Tell me about a time you faced a difficult technical challenge and how you solved it.**"}
+    
+    if "star" in message:
+        return {"response": "Exactly! The **STAR** method (Situation, Task, Action, Result) is the best way to structure your answers."}
+
+    responses = [
+        "That's a good point. How would you apply that to a real-world project?",
+        "Can you elaborate on the technical aspects of that?",
+        "Interesting! What was the most challenging part of that experience?",
+        "How do you usually handle disagreements with team members during such projects?",
+        "That sounds like a solid approach. Let's move to a technical question. How do you ensure your code is scalable?"
+    ]
+    return {"response": random.choice(responses)}
