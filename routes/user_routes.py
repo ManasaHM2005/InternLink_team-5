@@ -9,7 +9,13 @@ from models.recruiter import RecruiterProfile
 from schemas.user_schemas import UserProfileCreate, UserProfileUpdate, UserProfileResponse, UserResponse, ResumeResponse
 from schemas.application_schemas import ApplicationCreate, ApplicationResponse, ApplicationTrackingResponse, StatusHistoryResponse
 from utils.dependencies import get_current_user, require_role
-from services.resume_service import save_resume, extract_skills_from_text, parse_resume_text
+from services.resume_service import (
+    save_resume, 
+    extract_skills_from_text, 
+    parse_resume_text, 
+    extract_education_from_text, 
+    extract_experience_from_text
+)
 from services.search_service import search_jobs
 from services.notification_service import create_notification
 import os
@@ -69,9 +75,11 @@ async def upload_resume(
     # Save file
     file_path = save_resume(content, file.filename, current_user.id)
 
-    # Parse resume for skills
+    # Parse resume for skills, education, and experience
     parsed_text = parse_resume_text(file_path)
     parsed_skills = extract_skills_from_text(parsed_text)
+    extracted_edu = extract_education_from_text(parsed_text)
+    extracted_exp = extract_experience_from_text(parsed_text)
 
     # Set existing resumes as non-primary
     db.query(Resume).filter(
@@ -89,10 +97,31 @@ async def upload_resume(
         is_primary=True,
     )
     db.add(resume)
+    
+    # Update user profile automatically from resume
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    if not profile:
+        profile = UserProfile(user_id=current_user.id)
+        db.add(profile)
+        
+    # Update skills
+    existing_skills = [s.lower() for s in (profile.skills or [])]
+    new_skills = [s for s in parsed_skills if s.lower() not in existing_skills]
+    profile.skills = (profile.skills or []) + new_skills
+    
+    # Update education if profile current list is empty
+    if not profile.education and extracted_edu:
+        profile.education = extracted_edu
+        
+    # Update experience if profile current list is empty
+    if not profile.experience and extracted_exp:
+        profile.experience = extracted_exp
+        
     db.commit()
     db.refresh(resume)
 
     return resume
+
 
 
 @router.get("/resume", response_model=List[ResumeResponse])

@@ -64,6 +64,7 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     profile: Optional[UserProfileResponse] = None
+    resumes: List[ResumeResponse] = []
 
     class Config:
         from_attributes = True
