@@ -109,12 +109,11 @@ async def upload_resume(
     new_skills = [s for s in parsed_skills if s.lower() not in existing_skills]
     profile.skills = (profile.skills or []) + new_skills
     
-    # Update education if profile current list is empty
-    if not profile.education and extracted_edu:
+    # Update education and experience from resume
+    if extracted_edu:
         profile.education = extracted_edu
         
-    # Update experience if profile current list is empty
-    if not profile.experience and extracted_exp:
+    if extracted_exp:
         profile.experience = extracted_exp
         
     db.commit()

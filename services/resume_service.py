@@ -118,54 +118,103 @@ def extract_education_from_text(text: str) -> List[dict]:
     
     # Common degree patterns
     degree_patterns = [
-        r"(Bachelor|B\.?E\.?|B\.?Tech|B\.?S\.?|B\.?A\.?|Master|M\.?S\.?|M\.?Tech|Ph\.?D|MBA)",
-        r"(Degree|Diploma|School|University|College|Institute)"
+        r"(Bachelor|B\.?E\.?|B\.?Tech|B\.?S\.?|B\.?A\.?|Master|M\.?Tech|M\.?S\.?|M\.?E\.?|Ph\.?D|Doctoral|Post[\s-]Graduate|Graduate|Under[\s-]Graduate|XII|X|Secondary|Matriculation|MBA|Diploma)",
     ]
     
-    # Simple line-by-line check (very basic parser)
+    # Common institution keywords
+    inst_keywords = [
+        "University", "College", "Institute", "School", "Academy", "Vidhyalaya", 
+        "Polytechnic", "University", "Foundation", "High School", "Centre"
+    ]
+    
     lines = text.split('\n')
     for i, line in enumerate(lines):
         line = line.strip()
-        if not line: continue
+        if len(line) < 4: continue
         
         is_edu_line = False
-        degree = "Degree"
+        degree = None
+        
+        # Check for degree
         for pattern in degree_patterns:
             match = re.search(pattern, line, re.IGNORECASE)
             if match:
                 is_edu_line = True
-                if "bachelor" in line.lower() or "b.e" in line.lower() or "b.tech" in line.lower():
+                if re.search(r"(Bachelor|B\.?E\.?|B\.?Tech|B\.?S\.?)", line, re.IGNORECASE):
                     degree = "Bachelor's Degree"
-                elif "master" in line.lower() or "m.tech" in line.lower() or "m.s" in line.lower():
+                elif re.search(r"(Master|M\.?Tech|M\.?S\.?|MBA)", line, re.IGNORECASE):
                     degree = "Master's Degree"
+                elif re.search(r"(Ph\.?D|Doctoral)", line, re.IGNORECASE):
+                    degree = "PhD"
+                elif re.search(r"(Diploma)", line, re.IGNORECASE):
+                    degree = "Diploma"
+                else:
+                    degree = line.split(",")[0].strip().title()
                 break
+        
+        # Check for institution keywords if no degree but maybe it's just an institution line
+        if not degree:
+            for kw in inst_keywords:
+                if kw.lower() in line.lower():
+                    is_edu_line = True
+                    degree = "Degree" # Default if not found
+                    break
         
         if is_edu_line:
             # Try to find year
             year_match = re.search(r"(20\d{2})", line)
-            year = year_match.group(1) if year_match else "2024"
+            if not year_match and i < len(lines) - 1:
+                year_match = re.search(r"(20\d{2})", lines[i+1])
+            year = year_match.group(1) if year_match else "2024" # Default to recent if not found
             
-            institution = line[:100] # Safe limit
+            # Try to extract institution
+            institution = line[:100]
+            
+            # Better extraction logic
             if " at " in line.lower():
                 institution = line.lower().split(" at ")[-1].title()
             elif " from " in line.lower():
                 institution = line.lower().split(" from ")[-1].title()
+            elif " - " in line:
+                parts = line.split(" - ")
+                # If one part is degree, other might be institution
+                institution = parts[0].strip() if degree.lower() in parts[1].lower() else parts[1].strip()
+            elif any(kw.lower() in line.lower() for kw in inst_keywords):
+                # The line itself probably contains the institution
+                institution = line
             
-            education.append({
-                "degree": degree,
-                "institution": institution,
-                "year": year
-            })
+            # Clean institution: remove degree names if they are in the institution string
+            for kw in ["Bachelor", "Master", "Engineering", "Technology", "B.Tech", "B.E"]:
+                if kw in institution and len(institution) > len(kw) + 10:
+                    # Only remove if it's likely a prefix
+                    pass
+
+            # Final cleanup of common artifacts
+            institution = re.sub(r'^[•\d\.\-\s]+', '', institution).strip()
+            # If institution is now very short or just the degree name, try to look at previous/next line
+            if len(institution) < 10 or any(d.lower() in institution.lower() for d in ["Bachelor", "B.E", "B.Tech"]):
+                 if i > 0 and any(kw.lower() in lines[i-1].lower() for kw in inst_keywords):
+                     institution = lines[i-1].strip()
+                 elif i < len(lines)-1 and any(kw.lower() in lines[i+1].lower() for kw in inst_keywords):
+                     institution = lines[i+1].strip()
+
+            if institution and degree:
+                education.append({
+                    "degree": degree,
+                    "institution": institution[:80].title(),
+                    "year": year
+                })
             
     # De-duplicate and return top 2
     unique_edu = []
-    seen = set()
+    seen_inst = set()
     for e in education:
-        if e["institution"] not in seen:
+        inst_lower = e["institution"].lower()
+        if inst_lower not in seen_inst and len(inst_lower) > 5:
             unique_edu.append(e)
-            seen.add(e["institution"])
+            seen_inst.add(inst_lower)
             
-    return unique_edu[:2] if unique_edu else []
+    return unique_edu[:3] if unique_edu else []
 
 
 def extract_experience_from_text(text: str) -> List[dict]:
@@ -173,48 +222,70 @@ def extract_experience_from_text(text: str) -> List[dict]:
     experience = []
     
     # Common job titles or keywords indicating experience
-    job_keywords = ["Developer", "Engineer", "Intern", "Analyst", "Manager", "Lead", "Consultant", "Designer"]
+    job_keywords = ["Developer", "Engineer", "Intern", "Analyst", "Manager", "Lead", "Consultant", "Designer", "Specialist"]
     
     lines = text.split('\n')
-    for line in lines:
+    for i, line in enumerate(lines):
         line = line.strip()
-        if not line: continue
+        if len(line) < 5: continue
         
         is_exp_line = False
-        title = "Professional"
+        title_keyword = None
         for kw in job_keywords:
             if kw.lower() in line.lower():
                 is_exp_line = True
-                title = kw
+                title_keyword = kw
                 break
         
-        if is_exp_line and (" at " in line.lower() or " | " in line or " - " in line):
+        if is_exp_line:
             # Try to extract company
             company = "Company"
             if " at " in line.lower():
                 company = line.lower().split(" at ")[-1].split(",")[0].strip().title()
             elif " | " in line:
-                company = line.split("|")[0].strip()
+                parts = line.split("|")
+                company = parts[0].strip() if title_keyword.lower() in parts[1].lower() else parts[1].strip()
+            elif " - " in line:
+                parts = line.split(" - ")
+                if not any(re.search(r"\d{4}", p) for p in parts): # Not a date line
+                    company = parts[1].strip() if title_keyword.lower() in parts[0].lower() else parts[0].strip()
             
+            if company == "Company" or len(company) < 3:
+                # Look at nearby lines for company name (often on line above or below title)
+                if i > 0 and len(lines[i-1].strip()) > 3 and not any(kw.lower() in lines[i-1].lower() for kw in job_keywords):
+                    company = lines[i-1].strip()
+                elif i < len(lines)-1 and len(lines[i+1].strip()) > 3 and not any(kw.lower() in lines[i+1].lower() for kw in job_keywords):
+                    company = lines[i+1].strip()
+
             # Try to extract duration
             duration = "2023 - Present"
-            if "un" in line.lower() or "jan" in line.lower() or "feb" in line.lower() or "mar" in line.lower():
-                duration = "Recent"
+            date_pattern = r"((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|20\d{2})\s*[-–]\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|20\d{2}|Present|Current))"
+            date_match = re.search(date_pattern, line, re.IGNORECASE)
+            if not date_match and i < len(lines) - 1:
+                date_match = re.search(date_pattern, lines[i+1], re.IGNORECASE)
+            
+            if date_match:
+                duration = date_match.group(1).title()
+
+            # Clean company
+            company = re.sub(r'^[•\d\.\-\s]+', '', company).strip()
 
             experience.append({
-                "title": title + " Role",
-                "company": company,
+                "title": (line.split(",")[0] if len(line.split(",")[0]) < 40 else title_keyword + " Role").title(),
+                "company": company[:80].title(),
                 "duration": duration
             })
 
     unique_exp = []
-    seen = set()
+    seen_comp = set()
     for exp in experience:
-        if exp["company"] not in seen:
+        comp_lower = exp["company"].lower()
+        if comp_lower not in seen_comp and len(comp_lower) > 3:
             unique_exp.append(exp)
-            seen.add(exp["company"])
+            seen_comp.add(comp_lower)
 
-    return unique_exp[:2] if unique_exp else []
+    return unique_exp[:3] if unique_exp else []
+
 
 
 def calculate_resume_match_score(
