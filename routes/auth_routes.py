@@ -21,10 +21,17 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         )
 
     # Validate role
-    if user_data.role not in ["user", "recruiter"]:
+    if user_data.role == "admin":
+        admin_count = db.query(User).filter(User.role == "admin").count()
+        if admin_count >= 5:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Maximum limit of 5 admin accounts reached"
+            )
+    elif user_data.role not in ["user", "recruiter"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be 'user' or 'recruiter'"
+            detail="Role must be 'user', 'recruiter', or 'admin'"
         )
 
     # Create user
